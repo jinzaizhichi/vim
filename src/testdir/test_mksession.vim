@@ -179,6 +179,20 @@ func Test_mksession_large_winheight()
   call delete('Xtest_mks_winheight.out')
 endfunc
 
+func Test_mksession_zero_winheight()
+  set winminheight=0
+  edit SomeFile
+  split
+  wincmd _
+  mksession! Xtest_mks_zero
+  set winminheight&
+  let text = readfile('Xtest_mks_zero')->join()
+  call delete('Xtest_mks_zero')
+  close
+  " check there is no divide by zero
+  call assert_notmatch('/ 0[^0-9]', text)
+endfunc
+
 func Test_mksession_rtp()
   " TODO: fix problem with backslashes on Win32
   CheckNotMSWindows
@@ -1005,6 +1019,19 @@ func Test_mkvimrc()
   endfor
 
   call s:ClearMappings()
+
+  " the 'pastetoggle', 'wildchar' and 'wildcharm' option values should be
+  " stored as key names in the vimrc file
+  set pastetoggle=<F5>
+  set wildchar=<F6>
+  set wildcharm=<F7>
+  call assert_fails('mkvimrc Xtestvimrc')
+  mkvimrc! Xtestvimrc
+  call assert_notequal(-1, index(readfile('Xtestvimrc'), 'set pastetoggle=<F5>'))
+  call assert_notequal(-1, index(readfile('Xtestvimrc'), 'set wildchar=<F6>'))
+  call assert_notequal(-1, index(readfile('Xtestvimrc'), 'set wildcharm=<F7>'))
+  set pastetoggle& wildchar& wildcharm&
+
   call delete('Xtestvimrc')
 endfunc
 

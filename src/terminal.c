@@ -445,6 +445,13 @@ term_start(
 
     if (check_restricted() || check_secure())
 	return NULL;
+#ifdef FEAT_CMDWIN
+    if (cmdwin_type != 0)
+    {
+	emsg(_(e_cannot_open_terminal_from_command_line_window));
+	return NULL;
+    }
+#endif
 
     if ((opt->jo_set & (JO_IN_IO + JO_OUT_IO + JO_ERR_IO))
 					 == (JO_IN_IO + JO_OUT_IO + JO_ERR_IO)
@@ -473,6 +480,7 @@ term_start(
     ga_init2(&term->tl_scrollback_postponed, sizeof(sb_line_T), 300);
     ga_init2(&term->tl_osc_buf, sizeof(char), 300);
 
+    setpcmark();
     CLEAR_FIELD(split_ea);
     if (opt->jo_curwin)
     {
@@ -4340,13 +4348,13 @@ sync_shell_dir(VTermStringFragment *frag)
     char_u    *new_dir;
 
     // remove HOSTNAME to get PWD
-    while (*pos != '/' && offset < frag->len)
+    while (*pos != '/' && offset < (int)frag->len)
     {
         offset += 1;
         pos += 1;
     }
 
-    if (offset >= frag->len)
+    if (offset >= (int)frag->len)
     {
         semsg(_(e_failed_to_extract_pwd_from_str_check_your_shell_config),
 								    frag->str);
@@ -4589,9 +4597,9 @@ create_vterm(term_T *term, int rows, int cols)
  * Called when 'wincolor' was set.
  */
     void
-term_update_colors(void)
+term_update_colors(term_T *term)
 {
-    term_T *term = curwin->w_buffer->b_term;
+    win_T *wp;
 
     if (term->tl_vterm == NULL)
 	return;
@@ -4601,7 +4609,21 @@ term_update_colors(void)
 	    &term->tl_default_color.fg,
 	    &term->tl_default_color.bg);
 
-    redraw_later(NOT_VALID);
+    FOR_ALL_WINDOWS(wp)
+	if (wp->w_buffer == term->tl_buffer)
+	    redraw_win_later(wp, NOT_VALID);
+}
+
+/*
+ * Called when 'background' was set.
+ */
+    void
+term_update_colors_all(void)
+{
+    term_T *tp;
+
+    FOR_ALL_TERMS(tp)
+	term_update_colors(tp);
 }
 
 /*
@@ -5254,6 +5276,11 @@ term_load_dump(typval_T *argvars, typval_T *rettv, int do_diff)
     FILE	*fd2 = NULL;
     char_u	*textline = NULL;
 
+    if (in_vim9script()
+	    && (check_for_string_arg(argvars, 0) == FAIL
+		|| check_for_dict_arg(argvars, 1) == FAIL))
+	return;
+
     // First open the files.  If this fails bail out.
     fname1 = tv_get_string_buf_chk(&argvars[0], buf1);
     if (do_diff)
@@ -5669,7 +5696,7 @@ f_term_getattr(typval_T *argvars, typval_T *rettv)
 
     if (attr > HL_ALL)
 	attr = syn_attr2attr(attr);
-    for (i = 0; i < sizeof(attrs)/sizeof(attrs[0]); ++i)
+    for (i = 0; i < ARRAY_LENGTH(attrs); ++i)
 	if (STRCMP(name, attrs[i].name) == 0)
 	{
 	    rettv->vval.v_number = (attr & attrs[i].attr) != 0 ? 1 : 0;
@@ -5938,7 +5965,7 @@ f_term_list(typval_T *argvars UNUSED, typval_T *rettv)
 
     l = rettv->vval.v_list;
     FOR_ALL_TERMS(tp)
-	if (tp != NULL && tp->tl_buffer != NULL)
+	if (tp->tl_buffer != NULL)
 	    if (list_append_number(l,
 				   (varnumber_T)tp->tl_buffer->b_fnum) == FAIL)
 		return;

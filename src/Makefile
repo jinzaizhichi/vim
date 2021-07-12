@@ -386,7 +386,8 @@ CClink = $(CC)
 # Select the architecture supported.  Default is to build for the current
 # platform.  Use "both" for a universal binary.  That probably doesn't work
 # when including Perl, Python, etc.
-#CONF_OPT_DARWIN = --with-mac-arch=i386
+# NOTE: ppc probably doesn't work anymore,
+#CONF_OPT_DARWIN = --with-mac-arch=intel
 #CONF_OPT_DARWIN = --with-mac-arch=ppc
 #CONF_OPT_DARWIN = --with-mac-arch=both
 
@@ -436,6 +437,8 @@ CClink = $(CC)
 # PYTHON
 # Uncomment lines here when you want to include the Python interface.
 # This requires at least "normal" features, "tiny" and "small" don't work.
+# Python 3 is preferred, Python 2 (often referred to as "Python") has been
+# deprecated for a long time.
 # NOTE: This may cause threading to be enabled, which has side effects (such
 # as using different libraries and debugging becomes more difficult).
 # For Python3 support make a symbolic link in /usr/local/bin:
@@ -690,16 +693,18 @@ LINT_OPTIONS = -beprxzF
 # PROFILE_CFLAGS=-g -O0 --coverage -DWE_ARE_PROFILING -DUSE_GCOV_FLUSH
 
 
-# Uncomment one of the next two lines to compile Vim with the
-# address sanitizer (asan) or with the undefined sanitizer.  Works with gcc.
+# Uncomment the next lines to compile Vim with the address sanitizer (asan) and
+# with the undefined sanitizer.  Works with gcc.
+# You should also use -DEXITFREE to avoid false reports.
 # May make Vim twice as slow.  Errors are reported on stderr.
 # More at: https://code.google.com/p/address-sanitizer/
 # Useful environment variables:
 # $ export ASAN_OPTIONS="print_stacktrace=1 log_path=asan"
 # $ export LSAN_OPTIONS="suppressions=`pwd`/testdir/lsan-suppress.txt"
 # When running tests output can be found in testdir/asan.*
-#SANITIZER_CFLAGS = -g -O0 -fsanitize=address -fno-omit-frame-pointer
-#SANITIZER_CFLAGS = -g -O0 -fsanitize=undefined -fno-omit-frame-pointer
+#SANITIZER_CFLAGS = -g -O0 -fsanitize-recover=all \
+#		   -fsanitize=address -fsanitize=undefined \
+#		   -fno-omit-frame-pointer
 
 # Similarly when compiling with clang and using ubsan.
 # $ export UBSAN_OPTIONS="print_stacktrace=1 log_path=ubsan"
@@ -979,7 +984,7 @@ SANITIZER_LIBS = $(SANITIZER_CFLAGS)
 
 # The value of QUOTESED comes from auto/config.mk.
 # Uncomment the next line to use the default value.
-# QUOTESED = sed -e 's/[\\"]/\\&/g' -e 's/\\"/"/' -e 's/\\";$$/";/'
+# QUOTESED = sed -e 's/[\\"]/\\&/g' -e 's/\\"/"/' -e 's/\\";$$/";/' -e 's/  */ /g'
 
 ##################### end of system specific lines ################### }}}
 
@@ -1621,6 +1626,7 @@ BASIC_SRC = \
 	fileio.c \
 	filepath.c \
 	findfile.c \
+	float.c \
 	fold.c \
 	getchar.c \
 	gui_xim.c \
@@ -1671,6 +1677,7 @@ BASIC_SRC = \
 	spell.c \
 	spellfile.c \
 	spellsuggest.c \
+	strings.c \
 	syntax.c \
 	tag.c \
 	term.c \
@@ -1775,6 +1782,7 @@ OBJ_COMMON = \
 	objects/fileio.o \
 	objects/filepath.o \
 	objects/findfile.o \
+	objects/float.o \
 	objects/fold.o \
 	objects/getchar.o \
 	objects/gui_xim.o \
@@ -1821,6 +1829,7 @@ OBJ_COMMON = \
 	objects/spell.o \
 	objects/spellfile.o \
 	objects/spellsuggest.o \
+	objects/strings.o \
 	objects/syntax.o \
 	objects/tag.o \
 	objects/term.o \
@@ -1945,6 +1954,7 @@ PRO_AUTO = \
 	fileio.pro \
 	filepath.pro \
 	findfile.pro \
+	float.pro \
 	fold.pro \
 	getchar.pro \
 	gui_xim.pro \
@@ -2003,6 +2013,7 @@ PRO_AUTO = \
 	spell.pro \
 	spellfile.pro \
 	spellsuggest.pro \
+	strings.pro \
 	syntax.pro \
 	tag.pro \
 	term.pro \
@@ -3247,6 +3258,9 @@ objects/filepath.o: filepath.c
 objects/findfile.o: findfile.c
 	$(CCC) -o $@ findfile.c
 
+objects/float.o: float.c
+	$(CCC) -o $@ float.c
+
 objects/fold.o: fold.c
 	$(CCC) -o $@ fold.c
 
@@ -3504,6 +3518,9 @@ objects/spellfile.o: spellfile.c
 
 objects/spellsuggest.o: spellsuggest.c
 	$(CCC) -o $@ spellsuggest.c
+
+objects/strings.o: strings.c
+	$(CCC) -o $@ strings.c
 
 objects/syntax.o: syntax.c
 	$(CCC) -o $@ syntax.c
@@ -3838,6 +3855,10 @@ objects/findfile.o: findfile.c vim.h protodef.h auto/config.h feature.h os_unix.
  auto/osdef.h ascii.h keymap.h term.h macros.h option.h beval.h \
  proto/gui_beval.pro structs.h regexp.h gui.h alloc.h ex_cmds.h spell.h \
  proto.h errors.h globals.h
+objects/float.o: float.c vim.h protodef.h auto/config.h feature.h \
+ os_unix.h auto/osdef.h ascii.h keymap.h term.h macros.h option.h beval.h \
+ proto/gui_beval.pro structs.h regexp.h gui.h alloc.h ex_cmds.h spell.h \
+ proto.h errors.h globals.h
 objects/fold.o: fold.c vim.h protodef.h auto/config.h feature.h os_unix.h \
  auto/osdef.h ascii.h keymap.h term.h macros.h option.h beval.h \
  proto/gui_beval.pro structs.h regexp.h gui.h alloc.h ex_cmds.h spell.h \
@@ -4032,6 +4053,10 @@ objects/spellfile.o: spellfile.c vim.h protodef.h auto/config.h feature.h \
  proto.h errors.h globals.h
 objects/spellsuggest.o: spellsuggest.c vim.h protodef.h auto/config.h feature.h \
  os_unix.h auto/osdef.h ascii.h keymap.h term.h macros.h option.h beval.h \
+ proto/gui_beval.pro structs.h regexp.h gui.h alloc.h ex_cmds.h spell.h \
+ proto.h errors.h globals.h
+objects/strings.o: strings.c vim.h protodef.h auto/config.h feature.h os_unix.h \
+ auto/osdef.h ascii.h keymap.h term.h macros.h option.h beval.h \
  proto/gui_beval.pro structs.h regexp.h gui.h alloc.h ex_cmds.h spell.h \
  proto.h errors.h globals.h
 objects/syntax.o: syntax.c vim.h protodef.h auto/config.h feature.h os_unix.h \

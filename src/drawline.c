@@ -1121,8 +1121,9 @@ win_line(
 			    int		t;
 
 			    // like rl_mirror(), but keep the space at the end
-			    p2 = skiptowhite(extra) - 1;
-			    for (p1 = extra; p1 < p2; ++p1, --p2)
+			    p2 = skipwhite(extra);
+			    p2 = skiptowhite(p2) - 1;
+			    for (p1 = skipwhite(extra); p1 < p2; ++p1, --p2)
 			    {
 				t = *p1;
 				*p1 = *p2;
@@ -1538,6 +1539,9 @@ win_line(
 	    if (area_attr != 0)
 	    {
 		char_attr = hl_combine_attr(line_attr, area_attr);
+		if (!highlight_match)
+		    // let search highlight show in Visual area if possible
+		    char_attr = hl_combine_attr(search_attr, char_attr);
 # ifdef FEAT_SYN_HL
 		char_attr = hl_combine_attr(syntax_attr, char_attr);
 # endif
@@ -1978,6 +1982,12 @@ win_line(
 		    // TODO: is passing p for start of the line OK?
 		    n_extra = win_lbr_chartabsize(wp, line, p, (colnr_T)vcol,
 								    NULL) - 1;
+
+		    // We have just drawn the showbreak value, no need to add
+		    // space for it again
+		    if (vcol == vcol_sbr)
+			n_extra -= MB_CHARLEN(get_showbreak_value(wp));
+
 		    if (c == TAB && n_extra + col > wp->w_width)
 # ifdef FEAT_VARTABS
 			n_extra = tabstop_padding(vcol, wp->w_buffer->b_p_ts,
@@ -2773,6 +2783,7 @@ win_line(
 	// Show "extends" character from 'listchars' if beyond the line end and
 	// 'list' is set.
 	if (wp->w_lcs_chars.ext != NUL
+		&& draw_state == WL_LINE
 		&& wp->w_p_list
 		&& !wp->w_p_wrap
 #ifdef FEAT_DIFF
@@ -3040,7 +3051,8 @@ win_line(
 	    wp->w_p_rl ? (col < 0) :
 #endif
 				    (col >= wp->w_width))
-		&& (*ptr != NUL
+		&& (draw_state != WL_LINE
+		    || *ptr != NUL
 #ifdef FEAT_DIFF
 		    || filler_todo > 0
 #endif

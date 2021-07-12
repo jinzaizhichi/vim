@@ -1856,6 +1856,19 @@ ex_write(exarg_T *eap)
 	(void)do_write(eap);
 }
 
+#ifdef UNIX
+    static int
+check_writable(char_u *fname)
+{
+    if (mch_nodetype(fname) == NODE_OTHER)
+    {
+	semsg(_("E503: \"%s\" is not a file or writable device"), fname);
+	return FAIL;
+    }
+    return OK;
+}
+#endif
+
 /*
  * write current buffer to file 'eap->arg'
  * if 'eap->append' is TRUE, append to the file
@@ -1942,7 +1955,11 @@ do_write(exarg_T *eap)
 #ifdef FEAT_QUICKFIX
 		bt_dontwrite_msg(curbuf) ||
 #endif
-		check_fname() == FAIL || check_readonly(&eap->forceit, curbuf)))
+		check_fname() == FAIL
+#ifdef UNIX
+		|| check_writable(curbuf->b_ffname) == FAIL
+#endif
+		|| check_readonly(&eap->forceit, curbuf)))
 	goto theend;
 
     if (!other)
@@ -2103,7 +2120,7 @@ check_overwrite(
 	    // with UNIX it is possible to open a directory
 	    if (mch_isdir(ffname))
 	    {
-		semsg(_(e_isadir2), ffname);
+		semsg(_(e_src_is_directory), ffname);
 		return FAIL;
 	    }
 #endif
@@ -2120,7 +2137,7 @@ check_overwrite(
 	    else
 #endif
 	    {
-		emsg(_(e_exists));
+		emsg(_(e_file_exists));
 		return FAIL;
 	    }
 	}
@@ -3569,7 +3586,7 @@ check_secure(void)
     if (secure)
     {
 	secure = 2;
-	emsg(_(e_curdir));
+	emsg(_(e_command_not_allowed_from_vimrc_in_current_dir_or_tag_search));
 	return TRUE;
     }
 #ifdef HAVE_SANDBOX
@@ -3624,6 +3641,17 @@ skip_substitute(char_u *start, int delimiter)
 	MB_PTR_ADV(p);
     }
     return p;
+}
+
+    static int
+check_regexp_delim(int c)
+{
+    if (isalpha(c))
+    {
+	emsg(_("E146: Regular expressions can't be delimited by letters"));
+	return FAIL;
+    }
+    return OK;
 }
 
 /*
@@ -3688,11 +3716,9 @@ ex_substitute(exarg_T *eap)
 		&& vim_strchr((char_u *)"0123456789cegriIp|\"", *cmd) == NULL)
     {
 				// don't accept alphanumeric for separator
-	if (isalpha(*cmd))
-	{
-	    emsg(_("E146: Regular expressions can't be delimited by letters"));
+	if (check_regexp_delim(*cmd) == FAIL)
 	    return;
-	}
+
 	/*
 	 * undocumented vi feature:
 	 *  "\/sub/" and "\?sub?" use last used search pattern (almost like
@@ -3703,7 +3729,7 @@ ex_substitute(exarg_T *eap)
 	    ++cmd;
 	    if (vim_strchr((char_u *)"/?&", *cmd) == NULL)
 	    {
-		emsg(_(e_backslash));
+		emsg(_(e_backslash_should_be_followed_by));
 		return;
 	    }
 	    if (*cmd != '&')
@@ -3918,7 +3944,7 @@ ex_substitute(exarg_T *eap)
     if (!subflags.do_count && !curbuf->b_p_ma)
     {
 	// Substitution is not allowed in non-'modifiable' buffer
-	emsg(_(e_modifiable));
+	emsg(_(e_cannot_make_changes_modifiable_is_off));
 	return;
     }
 
@@ -4877,7 +4903,7 @@ ex_global(exarg_T *eap)
 	++cmd;
 	if (vim_strchr((char_u *)"/?&", *cmd) == NULL)
 	{
-	    emsg(_(e_backslash));
+	    emsg(_(e_backslash_should_be_followed_by));
 	    return;
 	}
 	if (*cmd == '&')
@@ -4890,6 +4916,10 @@ ex_global(exarg_T *eap)
     else if (*cmd == NUL)
     {
 	emsg(_("E148: Regular expression missing from global"));
+	return;
+    }
+    else if (check_regexp_delim(*cmd) == FAIL)
+    {
 	return;
     }
     else
@@ -5261,6 +5291,16 @@ ex_drop(exarg_T *eap)
     char_u *
 skip_vimgrep_pat(char_u *p, char_u **s, int *flags)
 {
+    return skip_vimgrep_pat_ext(p, s, flags, NULL, NULL);
+}
+
+/*
+ * As skip_vimgrep_pat() and store the character overwritten by NUL in "cp"
+ * and the pointer to it in "nulp".
+ */
+    char_u *
+skip_vimgrep_pat_ext(char_u *p, char_u **s, int *flags, char_u **nulp, int *cp)
+{
     int		c;
 
     if (vim_isIDc(*p))
@@ -5270,7 +5310,14 @@ skip_vimgrep_pat(char_u *p, char_u **s, int *flags)
 	    *s = p;
 	p = skiptowhite(p);
 	if (s != NULL && *p != NUL)
+	{
+	    if (nulp != NULL)
+	    {
+		*nulp = p;
+		*cp = *p;
+	    }
 	    *p++ = NUL;
+	}
     }
     else
     {
@@ -5284,18 +5331,27 @@ skip_vimgrep_pat(char_u *p, char_u **s, int *flags)
 
 	// Truncate the pattern.
 	if (s != NULL)
+	{
+	    if (nulp != NULL)
+	    {
+		*nulp = p;
+		*cp = *p;
+	    }
 	    *p = NUL;
+	}
 	++p;
 
 	// Find the flags
-	while (*p == 'g' || *p == 'j')
+	while (*p == 'g' || *p == 'j' || *p == 'f')
 	{
 	    if (flags != NULL)
 	    {
 		if (*p == 'g')
 		    *flags |= VGR_GLOBAL;
-		else
+		else if (*p == 'j')
 		    *flags |= VGR_NOJUMP;
+		else
+		    *flags |= VGR_FUZZY;
 	    }
 	    ++p;
 	}

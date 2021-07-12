@@ -57,7 +57,7 @@ def Test_expr1_trinary()
       assert_equal(function('len'), Res)
 
       var RetOne: func(string): number = function('len')
-      var RetTwo: func(string): number = function('winnr')
+      var RetTwo: func(string): number = function('charcol')
       var RetThat: func = g:atrue ? RetOne : RetTwo
       assert_equal(function('len'), RetThat)
 
@@ -172,11 +172,23 @@ func Test_expr1_trinary_fails()
   call CheckDefAndScriptFailure(["var x = 1? 'one' : 'two'"], msg, 1)
   call CheckDefAndScriptFailure(["var x = 1 ?'one' : 'two'"], msg, 1)
   call CheckDefAndScriptFailure(["var x = 1?'one' : 'two'"], msg, 1)
+  let lines =<< trim END
+    var x = 1
+     ?'one' : 'two'
+     # comment
+  END
+  call CheckDefAndScriptFailure(lines, 'E1004: White space required before and after ''?'' at "?''one'' : ''two''"', 2)
 
   let msg = "White space required before and after ':'"
   call CheckDefAndScriptFailure(["var x = 1 ? 'one': 'two'"], msg, 1)
   call CheckDefAndScriptFailure(["var x = 1 ? 'one' :'two'"], msg, 1)
   call CheckDefAndScriptFailure(["var x = 1 ? 'one':'two'"], msg, 1)
+  let lines =<< trim END
+    var x = 1 ? 'one'
+          :'two'
+          # Comment
+  END
+  call CheckDefAndScriptFailure(lines, 'E1004: White space required before and after '':'' at ":''two''"', 2)
 
   call CheckDefAndScriptFailure(["var x = 'x' ? 'one' : 'two'"], 'E1135:', 1)
   call CheckDefAndScriptFailure(["var x = 0z1234 ? 'one' : 'two'"], 'E974:', 1)
@@ -229,6 +241,12 @@ def Test_expr1_falsy()
   call CheckDefAndScriptFailure(["var x = 1?? 'one' : 'two'"], msg, 1)
   call CheckDefAndScriptFailure(["var x = 1 ??'one' : 'two'"], msg, 1)
   call CheckDefAndScriptFailure(["var x = 1??'one' : 'two'"], msg, 1)
+  lines =<< trim END
+    var x = 1
+      ??'one' : 'two'
+      #comment
+  END
+  CheckDefAndScriptFailure(lines, 'E1004: White space required before and after ''??'' at "??''one'' : ''two''"', 2)
 enddef
 
 def Record(val: any): any
@@ -376,6 +394,13 @@ def Test_expr2_fails()
 
   call CheckDefAndScriptFailure2(["var x = [] || false"], 'E1012: Type mismatch; expected bool but got list<unknown>', 'E745:', 1)
 
+  var lines =<< trim END
+    vim9script
+    echo false
+      ||true
+    # comment
+  END
+  CheckScriptFailure(lines, 'E1004: White space required before and after ''||'' at "||true"', 3)
 enddef
 
 " test &&
@@ -476,13 +501,19 @@ def Test_expr3_fails()
   CheckDefAndScriptFailure(["var x = 1&&2"], msg, 1)
   CheckDefAndScriptFailure(["var x = 1 &&2"], msg, 1)
   CheckDefAndScriptFailure(["var x = 1&& 2"], msg, 1)
+  var lines =<< trim END
+    var x = 1
+      &&2
+    # comment
+  END
+  CheckDefAndScriptFailure(lines, 'E1004: White space required before and after ''&&'' at "&&2"', 2)
 
   g:vals = []
   CheckDefAndScriptFailure2(["if 'yes' && 0", 'echo 0', 'endif'], 'E1012: Type mismatch; expected bool but got string', 'E1135: Using a String as a Bool', 1)
 
   CheckDefExecAndScriptFailure(['assert_equal(false, Record(1) && Record(4) && Record(0))'], 'E1023: Using a Number as a Bool: 4', 1)
 
-  var lines =<< trim END
+  lines =<< trim END
       if 3
           && true
       endif
@@ -616,7 +647,7 @@ def Test_expr4_equal()
   CheckDefFailure(["var x = 'a' == "], 'E1097:', 3)
   CheckScriptFailure(['vim9script', "var x = 'a' == "], 'E15:', 2)
 
-  CheckDefExecAndScriptFailure2(['var items: any', 'eval 1', 'eval 2', 'if items == []', 'endif'], 'E691:', 'E1072:', 4)
+  CheckDefExecAndScriptFailure2(['var items: any', 'eval 1 + 1', 'eval 2 + 2', 'if items == []', 'endif'], 'E691:', 'E1072:', 4)
 
   CheckDefExecAndScriptFailure(['var x: any = "a"', 'echo x == true'], 'E1072: Cannot compare string with bool', 2)
   CheckDefExecAndScriptFailure(["var x: any = true", 'echo x == ""'], 'E1072: Cannot compare bool with string', 2)
@@ -976,6 +1007,12 @@ def Test_expr4_vim9script()
   END
   CheckDefAndScriptFailure(lines, 'E1004:', 1)
 
+  for op in ['==', '>', '>=', '<', '<=', '=~', '!~', 'is', 'isnot']
+    lines = ["echo 'aaa'", op .. "'bbb'", '# comment']
+    var msg = printf("E1004: White space required before and after '%s'", op)
+    CheckDefAndScriptFailure(lines, msg, 2)
+  endfor
+
   lines =<< trim END
     echo len('xxx') == 3
   END
@@ -1220,7 +1257,14 @@ def Test_expr5_vim9script()
   lines =<< trim END
       echo 'a'.. 'b'
   END
-  CheckDefAndScriptFailure(lines, 'E1004:', 1)
+  CheckDefAndScriptFailure(lines, 'E1004: White space required before and after ''..'' at ".. ''b''"', 1)
+
+  lines =<< trim END
+      echo 'a'
+          ..'b'
+      # comment
+  END
+  CheckDefAndScriptFailure(lines, 'E1004: White space required before and after ''..'' at "..''b''"', 2)
 
   # check invalid string concatenation
   lines =<< trim END
@@ -1257,6 +1301,12 @@ def Test_expr5_vim9script()
       bwipe!
   END
   CheckDefAndScriptFailure(lines, "E1004: White space required before and after '/' at \"/pattern", 3)
+
+  for op in ['+', '-']
+    lines = ['var x = 1', op .. '2', '# comment']
+    var msg = printf("E1004: White space required before and after '%s' at \"%s2\"", op, op)
+    CheckDefAndScriptFailure(lines, msg, 2)
+  endfor
 enddef
 
 def Test_expr5_vim9script_channel()
@@ -1538,6 +1588,12 @@ func Test_expr6_fails()
   if has('float')
     call CheckDefAndScriptFailure2(["var x = 0.7[1]"], 'E1107:', 'E806:', 1)
   endif
+
+  for op in ['*', '/', '%']
+    let lines = ['var x = 1', op .. '2', '# comment']
+    let msg = printf("E1004: White space required before and after '%s' at \"%s2\"", op, op)
+    call CheckDefAndScriptFailure(lines, msg, 2)
+  endfor
 endfunc
 
 func Test_expr6_float_fails()
@@ -1575,16 +1631,28 @@ let $TESTVAR = 'testvar'
 
 " type casts
 def Test_expr7t()
-  var ls: list<string> = ['a', <string>g:string_empty]
-  var ln: list<number> = [<number>g:anint, <number>g:thefour]
-  var nr = <number>234
-  assert_equal(234, nr)
+  var lines =<< trim END
+      var ls: list<string> = ['a', <string>g:string_empty]
+      var ln: list<number> = [<number>g:anint, <number>g:thefour]
+      var nr = <number>234
+      assert_equal(234, nr)
+      var b: bool = <bool>1
+      assert_equal(true, b)
+      var text =
+            <string>
+              'text'
+      if false
+        text = <number>'xxx'
+      endif
+  END
+  CheckDefAndScriptSuccess(lines)
 
-  CheckDefAndScriptFailure2(["var x = <nr>123"], 'E1010:', 'E15:', 1)
+  CheckDefAndScriptFailure(["var x = <nr>123"], 'E1010:', 1)
   CheckDefFailure(["var x = <number>"], 'E1097:', 3)
+  CheckDefFailure(["var x = <number>string(1)"], 'E1012:', 1)
   CheckScriptFailure(['vim9script', "var x = <number>"], 'E15:', 2)
-  CheckDefAndScriptFailure2(["var x = <number >123"], 'E1068:', 'E15:', 1)
-  CheckDefAndScriptFailure2(["var x = <number 123"], 'E1104:', 'E15:', 1)
+  CheckDefAndScriptFailure(["var x = <number >123"], 'E1068:', 1)
+  CheckDefAndScriptFailure(["var x = <number 123"], 'E1104:', 1)
 enddef
 
 " test low level expression
@@ -1878,6 +1946,7 @@ enddef
 def Test_expr7_lambda()
   var lines =<< trim END
       var La = () => 'result'
+      # comment
       assert_equal('result', La())
       assert_equal([1, 3, 5], [1, 2, 3]->map((key, val) => key + val))
 
@@ -1887,6 +1956,12 @@ def Test_expr7_lambda()
                 ['111']: 111 } : {}
             )
       assert_equal([{}, {111: 111}, {}], dll)
+
+      # comment halfway an expression
+      var Ref = () => 4
+      # comment
+      + 6
+      assert_equal(10, Ref())
 
       ll = range(3)
       map(ll, (k, v) => v == 8 || v
@@ -1925,6 +2000,9 @@ def Test_expr7_lambda()
   CheckDefAndScriptFailure(["var Ref = (a)=>a + 1"], 'E1004:')
   CheckDefAndScriptFailure(["var Ref = (a)=> a + 1"], 'E1004: White space required before and after ''=>'' at "=> a + 1"')
   CheckDefAndScriptFailure(["var Ref = (a) =>a + 1"], 'E1004:')
+  CheckDefAndScriptFailure2(["var Ref = (a) =< a + 1"], 'E1001:', 'E121:')
+  CheckDefAndScriptFailure(["var Ref = (a: int) => a + 1"], 'E1010:')
+  CheckDefAndScriptFailure(["var Ref = (a): int => a + 1"], 'E1010:')
 
   CheckDefAndScriptFailure(["filter([1, 2], (k,v) => 1)"], 'E1069:', 1)
   # error is in first line of the lambda
@@ -2262,7 +2340,7 @@ def Test_expr7_dict()
   CheckScriptFailure(['vim9script', "var x = {xxx: 1,"], 'E723:', 2)
   CheckDefAndScriptFailure2(["var x = {['a']: xxx}"], 'E1001:', 'E121:', 1)
   CheckDefAndScriptFailure(["var x = {a: 1, a: 2}"], 'E721:', 1)
-  CheckDefExecAndScriptFailure2(["var x = g:anint.member"], 'E715:', 'E15:', 1)
+  CheckDefExecAndScriptFailure2(["var x = g:anint.member"], 'E715:', 'E488:', 1)
   CheckDefExecAndScriptFailure(["var x = g:dict_empty.member"], 'E716:', 1)
 
   CheckDefExecAndScriptFailure(['var x: dict<number> = {a: 234, b: "1"}'], 'E1012:', 1)
@@ -2400,6 +2478,32 @@ def Test_expr7_dict_vim9script()
   else
     CheckDefAndScriptFailure(lines, 'E117:', 0)
   endif
+
+  lines =<< trim END
+      vim9script
+      var x = 99
+      assert_equal({x: 99}, s:)
+  END
+  CheckScriptSuccess(lines)
+enddef
+
+def Test_expr7_call_2bool()
+  var lines =<< trim END
+      vim9script
+
+      def BrokenCall(nr: number, mode: bool, use: string): void
+        assert_equal(3, nr)
+        assert_equal(false, mode)
+        assert_equal('ab', use)
+      enddef
+
+      def TestBrokenCall(): void
+        BrokenCall(3, 0, 'ab')
+      enddef
+
+      TestBrokenCall()
+  END
+  CheckScriptSuccess(lines)
 enddef
 
 let g:oneString = 'one'
@@ -2759,19 +2863,10 @@ def Test_expr7_negate_add()
     echo + +n
   END
   CheckDefAndScriptFailure(lines, 'E15:')
+enddef
 
-  lines =<< trim END
-    var n = 12
-    :1
-    ++n
-  END
-  CheckDefAndScriptFailure(lines, 'E1050:')
-  lines =<< trim END
-    var n = 12
-    :1
-    --n
-  END
-  CheckDefAndScriptFailure(lines, 'E1050:')
+def LegacyReturn(): string
+  legacy return #{key: 'ok'}.key
 enddef
 
 def Test_expr7_legacy_script()
@@ -2787,6 +2882,17 @@ def Test_expr7_legacy_script()
       call assert_equal('legacy', GetLocalPrefix())
   END
   CheckScriptSuccess(lines)
+
+  assert_equal('ok', LegacyReturn())
+
+  lines =<< trim END
+      vim9script 
+      def GetNumber(): number   
+          legacy return range(3)->map('v:val + 1') 
+      enddef 
+      echo GetNumber()
+  END
+  CheckScriptFailure(lines, 'E1012: Type mismatch; expected number but got list<number>')
 enddef
 
 def Echo(arg: any): string
@@ -2844,7 +2950,9 @@ def Test_expr7_method_call()
       loclist->setloclist(0)
       assert_equal([{bufnr: bufnr,
                     lnum: 42,
+                    end_lnum: 0,
                     col: 17,
+                    end_col: 0,
                     text: 'wrong',
                     pattern: '',
                     valid: 1,
@@ -2862,8 +2970,19 @@ def Test_expr7_method_call()
 
       var Join = (l) => join(l, 'x')
       assert_equal('axb', ['a', 'b']->(Join)())
+      
+      var sorted = [3, 1, 2]
+                    -> sort()
+      assert_equal([1, 2, 3], sorted)
   END
   CheckDefAndScriptSuccess(lines)
+
+  lines =<< trim END
+    def RetVoid()
+    enddef
+    RetVoid()->byteidx(3)
+  END
+  CheckDefExecAndScriptFailure(lines, 'E1031:')
 enddef
 
 
@@ -2935,7 +3054,7 @@ func Test_expr7_fails()
 
   call CheckDefAndScriptFailure2(["var x = [notfound]"], "E1001:", 'E121:', 1)
 
-  call CheckDefAndScriptFailure2(["var X = () => 123)"], "E488:", 'E15:', 1)
+  call CheckDefAndScriptFailure(["var X = () => 123)"], 'E488:', 1)
   call CheckDefAndScriptFailure(["var x = 123->((x) => x + 5)"], "E107:", 1)
 
   call CheckDefAndScriptFailure(["var x = &notexist"], 'E113:', 1)
@@ -2953,7 +3072,7 @@ func Test_expr7_fails()
   call CheckDefExecAndScriptFailure(["var x = +g:alist"], 'E745:', 1)
   call CheckDefExecAndScriptFailure(["var x = +g:adict"], 'E728:', 1)
 
-  call CheckDefAndScriptFailure2(["var x = ''", "var y = x.memb"], 'E715:', 'E15:', 2)
+  call CheckDefAndScriptFailure2(["var x = ''", "var y = x.memb"], 'E715:', 'E488:', 2)
 
   call CheckDefAndScriptFailure2(["'yes'->", "Echo()"], 'E488: Trailing characters: ->', 'E260: Missing name after ->', 1)
 
@@ -3063,6 +3182,10 @@ def Test_expr7_string_subscript()
     assert_equal('ábçd', text[: 3])
     assert_equal('bçdëf', text[1 :])
     assert_equal('ábçdëf', text[:])
+
+    assert_equal('a', g:astring[0])
+    assert_equal('sd', g:astring[1 : 2])
+    assert_equal('asdf', g:astring[:])
   END
   CheckDefAndScriptSuccess(lines)
 
@@ -3132,6 +3255,9 @@ def Test_expr7_list_subscript()
       assert_equal([0], list[0 : -5])
       assert_equal([], list[0 : -6])
       assert_equal([], list[0 : -99])
+
+      assert_equal(2, g:alist[0])
+      assert_equal([2, 3, 4], g:alist[:])
   END
   CheckDefAndScriptSuccess(lines)
 
@@ -3154,6 +3280,9 @@ def Test_expr7_dict_subscript()
       var res = l[0].lnum > l[1].lnum
       assert_true(res)
 
+      assert_equal(2, g:adict['aaa'])
+      assert_equal(8, g:adict.bbb)
+
       var dd = {}
       def Func1()
         eval dd.key1.key2
@@ -3162,6 +3291,18 @@ def Test_expr7_dict_subscript()
         eval dd['key1'].key2
       enddef
       defcompile
+  END
+  CheckDefAndScriptSuccess(lines)
+enddef
+
+def Test_expr7_blob_subscript()
+  var lines =<< trim END
+      var b = 0z112233
+      assert_equal(0x11, b[0])
+      assert_equal(0z112233, b[:])
+
+      assert_equal(0x01, g:ablob[0])
+      assert_equal(0z01ab, g:ablob[:])
   END
   CheckDefAndScriptSuccess(lines)
 enddef
@@ -3215,8 +3356,8 @@ func Test_expr7_trailing_fails()
 endfunc
 
 func Test_expr_fails()
-  call CheckDefAndScriptFailure2(["var x = '1'is2"], 'E488:', 'E15:', 1)
-  call CheckDefAndScriptFailure2(["var x = '1'isnot2"], 'E488:', 'E15:', 1)
+  call CheckDefAndScriptFailure(["var x = '1'is2"], 'E488:', 1)
+  call CheckDefAndScriptFailure(["var x = '1'isnot2"], 'E488:', 1)
 
   call CheckDefAndScriptFailure2(["CallMe ('yes')"], 'E476:', 'E492:', 1)
 

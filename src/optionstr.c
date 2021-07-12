@@ -24,7 +24,11 @@ static char *(p_bo_values[]) = {"all", "backspace", "cursor", "complete",
 static char *(p_nf_values[]) = {"bin", "octal", "hex", "alpha", "unsigned", NULL};
 static char *(p_ff_values[]) = {FF_UNIX, FF_DOS, FF_MAC, NULL};
 #ifdef FEAT_CRYPT
-static char *(p_cm_values[]) = {"zip", "blowfish", "blowfish2", NULL};
+static char *(p_cm_values[]) = {"zip", "blowfish", "blowfish2",
+ # ifdef FEAT_SODIUM
+    "xchacha20",
+ # endif
+    NULL};
 #endif
 static char *(p_cmp_values[]) = {"internal", "keepascii", NULL};
 static char *(p_dy_values[]) = {"lastline", "truncate", "uhex", NULL};
@@ -618,8 +622,10 @@ check_stl_option(char_u *s)
 	}
 	if (*s == '{')
 	{
+	    int reevaluate = (*s == '%');
+
 	    s++;
-	    while (*s != '}' && *s)
+	    while ((*s != '}' || (reevaluate && s[-1] != '%')) && *s)
 		s++;
 	    if (*s != '}')
 		return N_("E540: Unclosed expression sequence");
@@ -908,6 +914,9 @@ ambw_end:
 		init_highlight(FALSE, FALSE);
 	    }
 #endif
+#ifdef FEAT_TERMINAL
+	    term_update_colors_all();
+#endif
 	}
 	else
 	    errmsg = e_invarg;
@@ -962,7 +971,7 @@ ambw_end:
 	if (gvarp == &p_fenc)
 	{
 	    if (!curbuf->b_p_ma && opt_flags != OPT_GLOBAL)
-		errmsg = e_modifiable;
+		errmsg = e_cannot_make_changes_modifiable_is_off;
 	    else if (vim_strchr(*varp, ',') != NULL)
 		// No comma allowed in 'fileencoding'; catches confusing it
 		// with 'fileencodings'.
@@ -1121,7 +1130,7 @@ ambw_end:
     else if (gvarp == &p_ff)
     {
 	if (!curbuf->b_p_ma && !(opt_flags & OPT_GLOBAL))
-	    errmsg = e_modifiable;
+	    errmsg = e_cannot_make_changes_modifiable_is_off;
 	else if (check_opt_strings(*varp, p_ff_values, FALSE) != OK)
 	    errmsg = e_invarg;
 	else
@@ -2176,7 +2185,7 @@ ambw_end:
     else if (varp == &curwin->w_p_wcr)
     {
 	if (curwin->w_buffer->b_term != NULL)
-	    term_update_colors();
+	    term_update_colors(curwin->w_buffer->b_term);
     }
 # if defined(MSWIN)
     // 'termwintype'

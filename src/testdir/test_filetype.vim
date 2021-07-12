@@ -148,7 +148,7 @@ let s:filename_checks = {
     \ 'dnsmasq': ['/etc/dnsmasq.conf', '/etc/dnsmasq.d/file', 'any/etc/dnsmasq.conf', 'any/etc/dnsmasq.d/file'],
     \ 'dockerfile': ['Containerfile', 'Dockerfile', 'file.Dockerfile'],
     \ 'dosbatch': ['file.bat', 'file.sys'],
-    \ 'dosini': ['.editorconfig', '/etc/pacman.conf', '/etc/yum.conf', 'file.ini', 'npmrc', '.npmrc', 'php.ini', 'php.ini-5', 'php.ini-file', '/etc/yum.repos.d/file', 'any/etc/pacman.conf', 'any/etc/yum.conf', 'any/etc/yum.repos.d/file'],
+    \ 'dosini': ['.editorconfig', '/etc/pacman.conf', '/etc/yum.conf', 'file.ini', 'npmrc', '.npmrc', 'php.ini', 'php.ini-5', 'php.ini-file', '/etc/yum.repos.d/file', 'any/etc/pacman.conf', 'any/etc/yum.conf', 'any/etc/yum.repos.d/file', 'file.wrap'],
     \ 'dot': ['file.dot', 'file.gv'],
     \ 'dracula': ['file.drac', 'file.drc', 'filelvs', 'filelpe', 'drac.file', 'lpe', 'lvs', 'some-lpe', 'some-lvs'],
     \ 'dsl': ['file.dsl'],
@@ -161,6 +161,8 @@ let s:filename_checks = {
     \ 'ecd': ['file.ecd'],
     \ 'edif': ['file.edf', 'file.edif', 'file.edo'],
     \ 'elinks': ['elinks.conf'],
+    \ 'elixir': ['file.ex', 'file.exs', 'mix.lock'],
+    \ 'eelixir': ['file.eex', 'file.leex'],
     \ 'elm': ['file.elm'],
     \ 'elmfilt': ['filter-rules'],
     \ 'epuppet': ['file.epp'],
@@ -182,6 +184,7 @@ let s:filename_checks = {
     \ 'focexec': ['file.fex', 'file.focexec'],
     \ 'forth': ['file.fs', 'file.ft', 'file.fth'],
     \ 'fortran': ['file.f', 'file.for', 'file.fortran', 'file.fpp', 'file.ftn', 'file.f77', 'file.f90', 'file.f95', 'file.f03', 'file.f08'],
+    \ 'fpcmake': ['file.fpc'],
     \ 'framescript': ['file.fsl'],
     \ 'freebasic': ['file.fb', 'file.bi'],
     \ 'fstab': ['fstab', 'mtab'],
@@ -189,6 +192,7 @@ let s:filename_checks = {
     \ 'gdb': ['.gdbinit'],
     \ 'gdmo': ['file.mo', 'file.gdmo'],
     \ 'gedcom': ['file.ged', 'lltxxxxx.txt', '/tmp/lltmp', '/tmp/lltmp-file', 'any/tmp/lltmp', 'any/tmp/lltmp-file'],
+    \ 'gemtext': ['file.gmi', 'file.gemini'],
     \ 'gift': ['file.gift'],
     \ 'gitcommit': ['COMMIT_EDITMSG', 'MERGE_MSG', 'TAG_EDITMSG'],
     \ 'gitconfig': ['file.git/config', '.gitconfig', '.gitmodules', 'file.git/modules//config', '/.config/git/config', '/etc/gitconfig', '/etc/gitconfig.d/file', '/.gitconfig.d/file', 'any/.config/git/config', 'any/.gitconfig.d/file', 'some.git/config', 'some.git/modules/any/config'],
@@ -210,7 +214,7 @@ let s:filename_checks = {
     \ 'gtkrc': ['.gtkrc', 'gtkrc', '.gtkrc-file', 'gtkrc-file'],
     \ 'haml': ['file.haml'],
     \ 'hamster': ['file.hsm'],
-    \ 'haskell': ['file.hs', 'file.hsc', 'file.hs-boot'],
+    \ 'haskell': ['file.hs', 'file.hsc', 'file.hs-boot', 'file.hsig'],
     \ 'haste': ['file.ht'],
     \ 'hastepreproc': ['file.htpp'],
     \ 'hb': ['file.hb'],
@@ -256,7 +260,8 @@ let s:filename_checks = {
     \ 'jgraph': ['file.jgr'],
     \ 'jovial': ['file.jov', 'file.j73', 'file.jovial'],
     \ 'jproperties': ['file.properties', 'file.properties_xx', 'file.properties_xx_xx', 'some.properties_xx_xx_file'],
-    \ 'json': ['file.json', 'file.jsonp', 'file.webmanifest', 'Pipfile.lock'],
+    \ 'json': ['file.json', 'file.jsonp', 'file.json-patch', 'file.webmanifest', 'Pipfile.lock', 'file.ipynb'],
+    \ 'jsonc': ['file.jsonc'],
     \ 'jsp': ['file.jsp'],
     \ 'kconfig': ['Kconfig', 'Kconfig.debug', 'Kconfig.file'],
     \ 'kivy': ['file.kv'],
@@ -359,7 +364,6 @@ let s:filename_checks = {
     \ 'pccts': ['file.g'],
     \ 'pdf': ['file.pdf'],
     \ 'perl': ['file.plx', 'file.al', 'file.psgi', 'gitolite.rc', '.gitolite.rc', 'example.gitolite.rc'],
-    \ 'perl6': ['file.p6', 'file.pm6', 'file.pl6', 'file.raku', 'file.rakumod'],
     \ 'pf': ['pf.conf'],
     \ 'pfmain': ['main.cf'],
     \ 'php': ['file.php', 'file.php9', 'file.phtml', 'file.ctp'],
@@ -375,7 +379,6 @@ let s:filename_checks = {
     \ 'plsql': ['file.pls', 'file.plsql'],
     \ 'po': ['file.po', 'file.pot'],
     \ 'pod': ['file.pod'],
-    \ 'pod6': ['file.pod6'],
     \ 'poke': ['file.pk'],
     \ 'postscr': ['file.ps', 'file.pfa', 'file.afm', 'file.eps', 'file.epsf', 'file.epsi', 'file.ai'],
     \ 'pov': ['file.pov'],
@@ -398,6 +401,7 @@ let s:filename_checks = {
     \ 'python': ['file.py', 'file.pyw', '.pythonstartup', '.pythonrc', 'file.ptl', 'file.pyi', 'SConstruct'],
     \ 'quake': ['anybaseq2/file.cfg', 'anyid1/file.cfg', 'quake3/file.cfg', 'baseq2/file.cfg', 'id1/file.cfg', 'quake1/file.cfg', 'some-baseq2/file.cfg', 'some-id1/file.cfg', 'some-quake1/file.cfg'],
     \ 'radiance': ['file.rad', 'file.mat'],
+    \ 'raku': ['file.pm6', 'file.p6', 'file.t6', 'file.pod6', 'file.raku', 'file.rakumod', 'file.rakudoc', 'file.rakutest'],
     \ 'ratpoison': ['.ratpoisonrc', 'ratpoisonrc'],
     \ 'rbs': ['file.rbs'],
     \ 'rc': ['file.rc', 'file.rch'],
@@ -423,7 +427,7 @@ let s:filename_checks = {
     \ 'sass': ['file.sass'],
     \ 'sather': ['file.sa'],
     \ 'sbt': ['file.sbt'],
-    \ 'scala': ['file.scala'],
+    \ 'scala': ['file.scala', 'file.sc'],
     \ 'scheme': ['file.scm', 'file.ss', 'file.rkt'],
     \ 'scilab': ['file.sci', 'file.sce'],
     \ 'screen': ['.screenrc', 'screenrc'],
@@ -624,7 +628,7 @@ let s:script_checks = {
       \          ['#!/path/pike0'],
       \          ['#!/path/pike9']],
       \ 'lua': [['#!/path/lua']],
-      \ 'perl6': [['#!/path/perl6']],
+      \ 'raku': [['#!/path/raku']],
       \ 'perl': [['#!/path/perl']],
       \ 'php': [['#!/path/php']],
       \ 'python': [['#!/path/python'],
@@ -790,5 +794,41 @@ func Test_pp_file()
   filetype off
 endfunc
 
+func Test_ex_file()
+  filetype on
+
+  call writefile(['arbitrary content'], 'Xfile.ex')
+  split Xfile.ex
+  call assert_equal('elixir', &filetype)
+  bwipe!
+  let g:filetype_euphoria = 'euphoria4'
+  split Xfile.ex
+  call assert_equal('euphoria4', &filetype)
+  bwipe!
+  unlet g:filetype_euphoria
+
+  call writefile(['-- filetype euphoria comment'], 'Xfile.ex')
+  split Xfile.ex
+  call assert_equal('euphoria3', &filetype)
+  bwipe!
+
+  call writefile(['--filetype euphoria comment'], 'Xfile.ex')
+  split Xfile.ex
+  call assert_equal('euphoria3', &filetype)
+  bwipe!
+
+  call writefile(['ifdef '], 'Xfile.ex')
+  split Xfile.ex
+  call assert_equal('euphoria3', &filetype)
+  bwipe!
+
+  call writefile(['include '], 'Xfile.ex')
+  split Xfile.ex
+  call assert_equal('euphoria3', &filetype)
+  bwipe!
+
+  call delete('Xfile.ex')
+  filetype off
+endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

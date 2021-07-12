@@ -276,6 +276,22 @@ func Test_V_arg()
    call assert_match("sourcing \"$VIMRUNTIME[\\/]defaults\.vim\"\r\nline 1: \" The default vimrc file\..*  verbose=15\n", out)
 endfunc
 
+" Test that an error is shown when the defaults.vim file could not be read
+func Test_defaults_error()
+  " Can't catch the output of gvim.
+  CheckNotGui
+  CheckNotMSWindows
+  " For unknown reasons freeing all memory does not work here, even though
+  " EXITFREE is defined.
+  CheckNotAsan
+
+  let out = system('VIMRUNTIME=/tmp ' .. GetVimCommand() .. ' --clean -cq')
+  call assert_match("E1187: Failed to source defaults.vim", out)
+
+  let out = system('VIMRUNTIME=/tmp ' .. GetVimCommand() .. ' -u DEFAULTS -cq')
+  call assert_match("E1187: Failed to source defaults.vim", out)
+endfunc
+
 " Test the '-q [errorfile]' argument.
 func Test_q_arg()
   CheckFeature quickfix
@@ -622,6 +638,12 @@ func Test_invalid_args()
   endfor
 
   if has('gui_gtk')
+    let out = split(system(GetVimCommand() .. ' --socketid'), "\n")
+    call assert_equal(1, v:shell_error)
+    call assert_match('^VIM - Vi IMproved .* (.*)$',          out[0])
+    call assert_equal('Argument missing after: "--socketid"', out[1])
+    call assert_equal('More info with: "vim -h"',             out[2])
+
     for opt in ['--socketid x', '--socketid 0xg']
       let out = split(system(GetVimCommand() .. ' ' .. opt), "\n")
       call assert_equal(1, v:shell_error)
@@ -629,6 +651,7 @@ func Test_invalid_args()
       call assert_equal('Invalid argument for: "--socketid"', out[1])
       call assert_equal('More info with: "vim -h"',           out[2])
     endfor
+
   endif
 endfunc
 
@@ -706,27 +729,6 @@ func Test_read_stdin()
     let lines = readfile('Xtestout')
     " MS-Windows adds a space after the word
     call assert_equal(['something'], split(lines[0]))
-  endif
-  call delete('Xtestout')
-endfunc
-
-func Test_set_shell()
-  let after =<< trim [CODE]
-    call writefile([&shell], "Xtestout")
-    quit!
-  [CODE]
-
-  if has('win32')
-    let $SHELL = 'C:\with space\cmd.exe'
-    let expected = '"C:\with space\cmd.exe"'
-  else
-    let $SHELL = '/bin/with space/sh'
-    let expected = '/bin/with\ space/sh'
-  endif
-
-  if RunVimPiped([], after, '', '')
-    let lines = readfile('Xtestout')
-    call assert_equal(expected, lines[0])
   endif
   call delete('Xtestout')
 endfunc
@@ -1261,6 +1263,37 @@ func Test_progname()
 
   call delete('Xprogname_after')
   call delete('Xprogname', 'd')
+endfunc
+
+" Test for doing a write from .vimrc
+func Test_write_in_vimrc()
+  call writefile(['silent! write'], 'Xvimrc')
+  let after =<< trim [CODE]
+    call assert_match('E32: ', v:errmsg)
+    call writefile(v:errors, 'Xtestout')
+    qall
+  [CODE]
+  if RunVim([], after, '-u Xvimrc')
+    call assert_equal([], readfile('Xtestout'))
+    call delete('Xtestout')
+  endif
+  call delete('Xvimrc')
+endfunc
+
+func Test_echo_true_in_cmd()
+  CheckNotGui
+
+  let lines =<< trim END
+      echo v:true
+      call writefile(['done'], 'Xresult')
+      quit
+  END
+  call writefile(lines, 'Xscript')
+  if RunVim([], [], '--cmd "source Xscript"')
+    call assert_equal(['done'], readfile('Xresult'))
+  endif
+  call delete('Xscript')
+  call delete('Xresult')
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

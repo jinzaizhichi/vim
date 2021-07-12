@@ -56,6 +56,7 @@ locale.c	| locale/language handling
 map.c		| mapping and abbreviations
 mark.c		| marks
 match.c		| highlight matching
+float.c		| floating point functions
 mbyte.c		| multi-byte character handling
 memfile.c	| storing lines for buffers in a swapfile
 memline.c	| storing lines for buffers in memory
@@ -79,6 +80,7 @@ sign.c		| signs
 spell.c		| spell checking core
 spellfile.c	| spell file handling
 spellsuggest.c	| spell correction suggestions
+strings.c	| string manipulation functions
 syntax.c	| syntax and other highlighting
 tag.c		| tags
 term.c		| terminal handling, termcap codes

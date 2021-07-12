@@ -1,7 +1,7 @@
 " Vim support file to detect file types
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2021 Apr 17
+" Last Change:	2021 Jul 03
 
 " Listen very carefully, I will say this only once
 if exists("did_load_filetypes")
@@ -393,7 +393,7 @@ au BufNewFile,BufRead *.cfm,*.cfi,*.cfc		setf cf
 " Configure scripts
 au BufNewFile,BufRead configure.in,configure.ac setf config
 
-" CUDA  Cumpute Unified Device Architecture
+" CUDA Compute Unified Device Architecture
 au BufNewFile,BufRead *.cu,*.cuh		setf cuda
 
 " Dockerfile; Podman uses the same syntax with name Containerfile
@@ -408,8 +408,15 @@ au BufNewFile,BufRead *enlightenment/*.cfg	setf c
 " Eterm
 au BufNewFile,BufRead *Eterm/*.cfg		setf eterm
 
+" Elixir or Euphoria
+au BufNewFile,BufRead *.ex call dist#ft#ExCheck()
+
+" Elixir
+au BufRead,BufNewFile mix.lock,*.exs setf elixir
+au BufRead,BufNewFile *.eex,*.leex setf eelixir
+
 " Euphoria 3 or 4
-au BufNewFile,BufRead *.eu,*.ew,*.ex,*.exu,*.exw  call dist#ft#EuphoriaCheck()
+au BufNewFile,BufRead *.eu,*.ew,*.exu,*.exw  call dist#ft#EuphoriaCheck()
 if has("fname_case")
    au BufNewFile,BufRead *.EU,*.EW,*.EX,*.EXU,*.EXW  call dist#ft#EuphoriaCheck()
 endif
@@ -643,6 +650,9 @@ au BufNewFile,BufRead *.mo,*.gdmo		setf gdmo
 " Gedcom
 au BufNewFile,BufRead *.ged,lltxxxxx.txt	setf gedcom
 
+" Gemtext
+au BufNewFile,BufRead *.gmi,*.gemini		setf gemtext
+
 " Gift (Moodle)
 autocmd BufRead,BufNewFile *.gift		setf gift
 
@@ -718,7 +728,7 @@ au BufNewFile,BufRead *.haml			setf haml
 au BufNewFile,BufRead *.hsm			setf hamster
 
 " Haskell
-au BufNewFile,BufRead *.hs,*.hsc,*.hs-boot	setf haskell
+au BufNewFile,BufRead *.hs,*.hsc,*.hs-boot,*.hsig setf haskell
 au BufNewFile,BufRead *.lhs			setf lhaskell
 au BufNewFile,BufRead *.chs			setf chaskell
 au BufNewFile,BufRead cabal.project		setf cabalproject
@@ -854,6 +864,15 @@ au BufNewFile,BufRead *.jov,*.j73,*.jovial	setf jovial
 
 " JSON
 au BufNewFile,BufRead *.json,*.jsonp,*.webmanifest	setf json
+
+" JSON Patch (RFC 6902)
+au BufNewFile,BufRead *.json-patch			setf json
+
+" Jupyter Notebook is also json
+au BufNewFile,BufRead *.ipynb				setf json
+
+" JSONC
+au BufNewFile,BufRead *.jsonc			setf jsonc
 
 " Kixtart
 au BufNewFile,BufRead *.kix			setf kix
@@ -1019,6 +1038,7 @@ au BufNewFile,BufRead *.hgrc,*hgrc		setf cfg
 
 " Meson Build system config
 au BufNewFile,BufRead meson.build,meson_options.txt setf meson
+au BufNewFile,BufRead *.wrap			setf dosini
 
 " Messages (logs mostly)
 au BufNewFile,BufRead */log/{auth,cron,daemon,debug,kern,lpr,mail,messages,news/news,syslog,user}{,.log,.err,.info,.warn,.crit,.notice}{,.[0-9]*,-[0-9]*} setf messages
@@ -1195,6 +1215,9 @@ au BufNewFile,BufRead *.pp			call dist#ft#FTpp()
 " Delphi or Lazarus program file
 au BufNewFile,BufRead *.dpr,*.lpr		setf pascal
 
+" Free Pascal makefile definition file
+au BufNewFile,BufRead *.fpc			setf fpcmake
+
 " PDF
 au BufNewFile,BufRead *.pdf			setf pdf
 
@@ -1208,8 +1231,6 @@ else
   au BufNewFile,BufRead *.pl			call dist#ft#FTpl()
 endif
 au BufNewFile,BufRead *.plx,*.al,*.psgi		setf perl
-au BufNewFile,BufRead *.p6,*.pm6,*.pl6		setf perl6
-au BufNewFile,BufRead *.raku,*.rakumod		setf perl6
 
 " Perl, XPM or XPM2
 au BufNewFile,BufRead *.pm
@@ -1223,7 +1244,6 @@ au BufNewFile,BufRead *.pm
 
 " Perl POD
 au BufNewFile,BufRead *.pod			setf pod
-au BufNewFile,BufRead *.pod6			setf pod6
 
 " Php, php3, php4, etc.
 " Also Phtml (was used for PHP 2 in the past)
@@ -1366,6 +1386,9 @@ au BufNewFile,BufRead *.ptl,*.pyi,SConstruct		   setf python
 " Radiance
 au BufNewFile,BufRead *.rad,*.mat		setf radiance
 
+" Raku (formelly Perl6)
+au BufNewFile,BufRead *.pm6,*.p6,*.t6,*.pod6,*.raku,*.rakumod,*.rakudoc,*.rakutest  setf raku
+
 " Ratpoison config/command files
 au BufNewFile,BufRead .ratpoisonrc,ratpoisonrc	setf ratpoison
 
@@ -1492,7 +1515,7 @@ au BufNewFile,BufRead *.sass			setf sass
 au BufNewFile,BufRead *.sa			setf sather
 
 " Scala
-au BufNewFile,BufRead *.scala			setf scala
+au BufNewFile,BufRead *.scala,*.sc		setf scala
 
 " SBT - Scala Build Tool
 au BufNewFile,BufRead *.sbt			setf sbt

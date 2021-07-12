@@ -93,6 +93,7 @@ update_screen(int type_arg)
     int		gui_cursor_row = 0;
 #endif
     int		no_update = FALSE;
+    int		save_pum_will_redraw = pum_will_redraw;
 
     // Don't do anything if the screen structures are (not yet) valid.
     if (!screen_valid(TRUE))
@@ -276,6 +277,11 @@ update_screen(int type_arg)
     }
 #endif
 
+    if (pum_redraw_in_same_position())
+	// Avoid flicker if the popup menu is going to be redrawn in the same
+	// position.
+	pum_will_redraw = TRUE;
+
     // Go from top to bottom through the windows, redrawing the ones that need
     // it.
 #if defined(FEAT_SEARCH_EXTRA) || defined(FEAT_CLIPBOARD)
@@ -321,7 +327,9 @@ update_screen(int type_arg)
 #if defined(FEAT_SEARCH_EXTRA)
     end_search_hl();
 #endif
+
     // May need to redraw the popup menu.
+    pum_will_redraw = save_pum_will_redraw;
     pum_may_redraw();
 
     // Reset b_mod_set flags.  Going through all windows is probably faster
@@ -1371,6 +1379,15 @@ fold_line(
 	curwin->w_cline_folded = TRUE;
 	curwin->w_valid |= (VALID_CHEIGHT|VALID_CROW);
     }
+
+# ifdef FEAT_CONCEAL
+    // When the line was not folded w_wrow may have been set, recompute it.
+    if (wp == curwin
+	    && wp->w_cursor.lnum >= lnum
+	    && wp->w_cursor.lnum <= lnume
+	    && conceal_cursor_line(wp))
+	curs_columns(TRUE);
+# endif
 }
 #endif
 
@@ -1995,12 +2012,41 @@ win_update(win_T *wp)
 		    ve_flags = VE_ALL;
 #endif
 		getvcols(wp, &VIsual, &curwin->w_cursor, &fromc, &toc);
+		++toc;
 #if defined(FEAT_LINEBREAK)
 		ve_flags = save_ve_flags;
 #endif
-		++toc;
+		// Highlight to the end of the line, unless 'virtualedit' has
+		// "block".
 		if (curwin->w_curswant == MAXCOL)
-		    toc = MAXCOL;
+		{
+		    if (ve_flags & VE_BLOCK)
+		    {
+			pos_T	    pos;
+			int	    cursor_above =
+					   curwin->w_cursor.lnum < VIsual.lnum;
+
+			// Need to find the longest line.
+			toc = 0;
+			pos.coladd = 0;
+			for (pos.lnum = curwin->w_cursor.lnum; cursor_above
+					? pos.lnum <= VIsual.lnum
+					: pos.lnum >= VIsual.lnum;
+					     pos.lnum += cursor_above ? 1 : -1)
+			{
+			    colnr_T t;
+
+			    pos.col = (int)STRLEN(ml_get_buf(wp->w_buffer,
+							     pos.lnum, FALSE));
+			    getvvcol(wp, &pos, NULL, NULL, &t);
+			    if (toc < t)
+				toc = t;
+			}
+			++toc;
+		    }
+		    else
+			toc = MAXCOL;
+		}
 
 		if (fromc != wp->w_old_cursor_fcol
 			|| toc != wp->w_old_cursor_lcol)
@@ -3002,6 +3048,13 @@ redraw_after_callback(int call_update_screen)
 	// keep the command line if possible
 	update_screen(VALID_NO_UPDATE);
 	setcursor();
+
+	if (msg_scrolled == 0)
+	{
+	    // don't want a hit-enter prompt when something else is displayed
+	    msg_didany = FALSE;
+	    need_wait_return = FALSE;
+	}
     }
     cursor_on();
 #ifdef FEAT_GUI

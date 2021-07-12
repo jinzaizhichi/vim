@@ -645,6 +645,7 @@ typedef struct
 #define CMOD_KEEPPATTERNS   0x1000	// ":keeppatterns"
 #define CMOD_NOSWAPFILE	    0x2000	// ":noswapfile"
 #define CMOD_VIM9CMD	    0x4000	// ":vim9cmd"
+#define CMOD_LEGACY	    0x8000	// ":legacy"
 
     int		cmod_split;		// flags for win_split()
     int		cmod_tab;		// > 0 when ":tab" was used
@@ -768,11 +769,13 @@ typedef struct memline
 // Values for the flags argument of ml_delete_flags().
 #define ML_DEL_MESSAGE	    1	// may give a "No lines in buffer" message
 #define ML_DEL_UNDO	    2	// called from undo, do not update textprops
+#define ML_DEL_NOPROP	    4	// splitting data block, do not update textprops
 
 // Values for the flags argument of ml_append_int().
 #define ML_APPEND_NEW	    1	// starting to edit a new file
 #define ML_APPEND_MARK	    2	// mark the new line
 #define ML_APPEND_UNDO	    4	// called from undo
+#define ML_APPEND_NOPROP    8	// do not continue textprop from previous line
 
 
 /*
@@ -933,13 +936,14 @@ typedef struct {
 
 # define CSF_TRY	0x0100	// is a ":try"
 # define CSF_FINALLY	0x0200	// ":finally" has been passed
-# define CSF_THROWN	0x0400	// exception thrown to this try conditional
-# define CSF_CAUGHT	0x0800  // exception caught by this try conditional
-# define CSF_SILENT	0x1000	// "emsg_silent" reset by ":try"
+# define CSF_CATCH	0x0400	// ":catch" has been seen
+# define CSF_THROWN	0x0800	// exception thrown to this try conditional
+# define CSF_CAUGHT	0x1000  // exception caught by this try conditional
+# define CSF_SILENT	0x2000	// "emsg_silent" reset by ":try"
 // Note that CSF_ELSE is only used when CSF_TRY and CSF_WHILE are unset
 // (an ":if"), and CSF_SILENT is only used when CSF_TRY is set.
 //
-#define CSF_FUNC_DEF	0x2000	// a function was defined in this block
+#define CSF_FUNC_DEF	0x4000	// a function was defined in this block
 
 /*
  * What's pending for being reactivated at the ":endtry" of this try
@@ -1370,6 +1374,7 @@ typedef struct cbq_S cbq_T;
 typedef struct channel_S channel_T;
 typedef struct cctx_S cctx_T;
 typedef struct ectx_S ectx_T;
+typedef struct instr_S instr_T;
 
 typedef enum
 {
@@ -1388,6 +1393,7 @@ typedef enum
     VAR_DICT,		// "v_dict" is used
     VAR_JOB,		// "v_job" is used
     VAR_CHANNEL,	// "v_channel" is used
+    VAR_INSTR,		// "v_instr" is used
 } vartype_T;
 
 // A type specification.
@@ -1428,6 +1434,7 @@ typedef struct
 	channel_T	*v_channel;	// channel value (can be NULL!)
 #endif
 	blob_T		*v_blob;	// blob value (can be NULL!)
+	instr_T		*v_instr;	// instructions to execute
     }		vval;
 } typval_T;
 
@@ -1604,6 +1611,8 @@ typedef struct
     int		uf_dfunc_idx;	// only valid if uf_def_status is UF_COMPILED
     garray_T	uf_args;	// arguments, including optional arguments
     garray_T	uf_def_args;	// default argument expressions
+    int		uf_args_visible; // normally uf_args.ga_len, less when
+				 // compiling default argument expression.
 
     // for :def (for :function uf_ret_type is NULL)
     type_T	**uf_arg_types;	// argument types (count == uf_args.ga_len)
@@ -1624,6 +1633,11 @@ typedef struct
 # endif
 
     garray_T	uf_lines;	// function lines
+
+    int		uf_debug_tick;	// when last checked for a breakpoint in this
+				// function.
+    int		uf_has_breakpoint;  // TRUE when a breakpoint has been set in
+				    // this function.
 # ifdef FEAT_PROFILE
     int		uf_profiling;	// TRUE when func is being profiled
     int		uf_prof_initialized;
@@ -1877,7 +1891,9 @@ typedef struct {
     // Used to collect lines while parsing them, so that they can be
     // concatenated later.  Used when "eval_ga.ga_itemsize" is not zero.
     // "eval_ga.ga_data" is a list of pointers to lines.
+    // "eval_freega" list pointers that need to be freed after concatenating.
     garray_T	eval_ga;
+    garray_T	eval_freega;
 
     // pointer to the last line obtained with getsourceline()
     char_u	*eval_tofree;
@@ -1988,7 +2004,7 @@ struct outer_S {
     garray_T	*out_stack;	    // stack from outer scope
     int		out_frame_idx;	    // index of stack frame in out_stack
     outer_T	*out_up;	    // outer scope of outer scope or NULL
-    int		out_up_is_copy;	    // don't free out_up
+    partial_T	*out_up_partial;    // partial owning out_up or NULL
 };
 
 struct partial_S
@@ -2506,11 +2522,12 @@ typedef struct {
 # define CRYPT_M_ZIP	0
 # define CRYPT_M_BF	1
 # define CRYPT_M_BF2	2
-# define CRYPT_M_COUNT	3 // number of crypt methods
+# define CRYPT_M_SOD    3
+# define CRYPT_M_COUNT	4 // number of crypt methods
 
 // Currently all crypt methods work inplace.  If one is added that isn't then
 // define this.
-//  # define CRYPT_NOT_INPLACE 1
+# define CRYPT_NOT_INPLACE 1
 #endif
 
 #ifdef FEAT_PROP_POPUP
@@ -3765,7 +3782,7 @@ typedef struct oparg_S
     int		use_reg_one;	// TRUE if delete uses reg 1 even when not
 				// linewise
     int		inclusive;	// TRUE if char motion is inclusive (only
-				// valid when motion_type is MCHAR
+				// valid when motion_type is MCHAR)
     int		end_adjusted;	// backuped b_op_end one char (only used by
 				// do_format())
     pos_T	start;		// start of the operator
@@ -3782,6 +3799,8 @@ typedef struct oparg_S
     colnr_T	end_vcol;	// end col for block mode operator
     long	prev_opcount;	// ca.opcount saved for K_CURSORHOLD
     long	prev_count0;	// ca.count0 saved for K_CURSORHOLD
+    int		excl_tr_ws;	// exclude trailing whitespace for yank of a
+				// block
 } oparg_T;
 
 /*

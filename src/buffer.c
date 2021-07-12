@@ -27,6 +27,12 @@
 
 #include "vim.h"
 
+
+#ifdef FEAT_EVAL
+// Determines how deeply nested %{} blocks will be evaluated in statusline.
+# define MAX_STL_EVAL_DEPTH 100
+#endif
+
 static void	enter_buffer(buf_T *buf);
 static void	buflist_getfpos(void);
 static char_u	*buflist_match(regmatch_T *rmp, buf_T *buf, int ignore_case);
@@ -1124,7 +1130,12 @@ handle_swap_exists(bufref_T *old_curbuf)
 	close_buffer(curwin, curbuf, DOBUF_UNLOAD, FALSE, FALSE);
 	if (old_curbuf == NULL || !bufref_valid(old_curbuf)
 					      || old_curbuf->br_buf == curbuf)
+	{
+	    // Block autocommands here because curwin->w_buffer is NULL.
+	    block_autocmds();
 	    buf = buflist_new(NULL, NULL, 1L, BLN_CURBUF | BLN_LISTED);
+	    unblock_autocmds();
+	}
 	else
 	    buf = old_curbuf->br_buf;
 	if (buf != NULL)
@@ -1172,122 +1183,6 @@ handle_swap_exists(bufref_T *old_curbuf)
 #endif
     }
     swap_exists_action = SEA_NONE;
-}
-
-/*
- * do_bufdel() - delete or unload buffer(s)
- *
- * addr_count == 0: ":bdel" - delete current buffer
- * addr_count == 1: ":N bdel" or ":bdel N [N ..]" - first delete
- *		    buffer "end_bnr", then any other arguments.
- * addr_count == 2: ":N,N bdel" - delete buffers in range
- *
- * command can be DOBUF_UNLOAD (":bunload"), DOBUF_WIPE (":bwipeout") or
- * DOBUF_DEL (":bdel")
- *
- * Returns error message or NULL
- */
-    char *
-do_bufdel(
-    int		command,
-    char_u	*arg,		// pointer to extra arguments
-    int		addr_count,
-    int		start_bnr,	// first buffer number in a range
-    int		end_bnr,	// buffer nr or last buffer nr in a range
-    int		forceit)
-{
-    int		do_current = 0;	// delete current buffer?
-    int		deleted = 0;	// number of buffers deleted
-    char	*errormsg = NULL; // return value
-    int		bnr;		// buffer number
-    char_u	*p;
-
-    if (addr_count == 0)
-    {
-	(void)do_buffer(command, DOBUF_CURRENT, FORWARD, 0, forceit);
-    }
-    else
-    {
-	if (addr_count == 2)
-	{
-	    if (*arg)		// both range and argument is not allowed
-		return ex_errmsg(e_trailing_arg, arg);
-	    bnr = start_bnr;
-	}
-	else	// addr_count == 1
-	    bnr = end_bnr;
-
-	for ( ;!got_int; ui_breakcheck())
-	{
-	    /*
-	     * delete the current buffer last, otherwise when the
-	     * current buffer is deleted, the next buffer becomes
-	     * the current one and will be loaded, which may then
-	     * also be deleted, etc.
-	     */
-	    if (bnr == curbuf->b_fnum)
-		do_current = bnr;
-	    else if (do_buffer(command, DOBUF_FIRST, FORWARD, (int)bnr,
-							       forceit) == OK)
-		++deleted;
-
-	    /*
-	     * find next buffer number to delete/unload
-	     */
-	    if (addr_count == 2)
-	    {
-		if (++bnr > end_bnr)
-		    break;
-	    }
-	    else    // addr_count == 1
-	    {
-		arg = skipwhite(arg);
-		if (*arg == NUL)
-		    break;
-		if (!VIM_ISDIGIT(*arg))
-		{
-		    p = skiptowhite_esc(arg);
-		    bnr = buflist_findpat(arg, p,
-			  command == DOBUF_WIPE || command == DOBUF_WIPE_REUSE,
-								FALSE, FALSE);
-		    if (bnr < 0)	    // failed
-			break;
-		    arg = p;
-		}
-		else
-		    bnr = getdigits(&arg);
-	    }
-	}
-	if (!got_int && do_current && do_buffer(command, DOBUF_FIRST,
-					  FORWARD, do_current, forceit) == OK)
-	    ++deleted;
-
-	if (deleted == 0)
-	{
-	    if (command == DOBUF_UNLOAD)
-		STRCPY(IObuff, _("E515: No buffers were unloaded"));
-	    else if (command == DOBUF_DEL)
-		STRCPY(IObuff, _("E516: No buffers were deleted"));
-	    else
-		STRCPY(IObuff, _("E517: No buffers were wiped out"));
-	    errormsg = (char *)IObuff;
-	}
-	else if (deleted >= p_report)
-	{
-	    if (command == DOBUF_UNLOAD)
-		smsg(NGETTEXT("%d buffer unloaded",
-			    "%d buffers unloaded", deleted), deleted);
-	    else if (command == DOBUF_DEL)
-		smsg(NGETTEXT("%d buffer deleted",
-			    "%d buffers deleted", deleted), deleted);
-	    else
-		smsg(NGETTEXT("%d buffer wiped out",
-			    "%d buffers wiped out", deleted), deleted);
-	}
-    }
-
-
-    return errormsg;
 }
 
 /*
@@ -1348,13 +1243,13 @@ empty_curbuf(
  *
  * Return FAIL or OK.
  */
-    int
-do_buffer(
+    static int
+do_buffer_ext(
     int		action,
     int		start,
     int		dir,		// FORWARD or BACKWARD
     int		count,		// buffer number or number of buffers
-    int		forceit)	// TRUE for :...!
+    int		flags)		// DOBUF_FORCEIT etc.
 {
     buf_T	*buf;
     buf_T	*bp;
@@ -1440,6 +1335,14 @@ do_buffer(
 	    emsg(_("E88: Cannot go before first buffer"));
 	return FAIL;
     }
+#ifdef FEAT_PROP_POPUP
+    if ((flags & DOBUF_NOPOPUP) && bt_popup(buf)
+# ifdef FEAT_TERMINAL
+				&& !bt_terminal(buf)
+#endif
+       )
+	return OK;
+#endif
 
 #ifdef FEAT_GUI
     need_mouse_correct = TRUE;
@@ -1464,7 +1367,7 @@ do_buffer(
 				   && buf->b_ml.ml_mfp == NULL && !buf->b_p_bl)
 	    return FAIL;
 
-	if (!forceit && bufIsChanged(buf))
+	if ((flags & DOBUF_FORCEIT) == 0 && bufIsChanged(buf))
 	{
 #if defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG)
 	    if ((p_confirm || (cmdmod.cmod_flags & CMOD_CONFIRM)) && p_write)
@@ -1500,7 +1403,7 @@ do_buffer(
 	    if (bp->b_p_bl && bp != buf)
 		break;
 	if (bp == NULL && buf == curbuf)
-	    return empty_curbuf(TRUE, forceit, action);
+	    return empty_curbuf(TRUE, (flags & DOBUF_FORCEIT), action);
 
 	/*
 	 * If the deleted buffer is the current one, close the current window
@@ -1627,7 +1530,7 @@ do_buffer(
     {
 	// Autocommands must have wiped out all other buffers.  Only option
 	// now is to make the current buffer empty.
-	return empty_curbuf(FALSE, forceit, action);
+	return empty_curbuf(FALSE, (flags & DOBUF_FORCEIT), action);
     }
 
     /*
@@ -1654,7 +1557,7 @@ do_buffer(
     /*
      * Check if the current buffer may be abandoned.
      */
-    if (action == DOBUF_GOTO && !can_abandon(curbuf, forceit))
+    if (action == DOBUF_GOTO && !can_abandon(curbuf, (flags & DOBUF_FORCEIT)))
     {
 #if defined(FEAT_GUI_DIALOG) || defined(FEAT_CON_DIALOG)
 	if ((p_confirm || (cmdmod.cmod_flags & CMOD_CONFIRM)) && p_write)
@@ -1687,6 +1590,134 @@ do_buffer(
 #endif
 
     return OK;
+}
+
+    int
+do_buffer(
+    int		action,
+    int		start,
+    int		dir,		// FORWARD or BACKWARD
+    int		count,		// buffer number or number of buffers
+    int		forceit)	// TRUE when using !
+{
+    return do_buffer_ext(action, start, dir, count,
+						  forceit ? DOBUF_FORCEIT : 0);
+}
+
+/*
+ * do_bufdel() - delete or unload buffer(s)
+ *
+ * addr_count == 0: ":bdel" - delete current buffer
+ * addr_count == 1: ":N bdel" or ":bdel N [N ..]" - first delete
+ *		    buffer "end_bnr", then any other arguments.
+ * addr_count == 2: ":N,N bdel" - delete buffers in range
+ *
+ * command can be DOBUF_UNLOAD (":bunload"), DOBUF_WIPE (":bwipeout") or
+ * DOBUF_DEL (":bdel")
+ *
+ * Returns error message or NULL
+ */
+    char *
+do_bufdel(
+    int		command,
+    char_u	*arg,		// pointer to extra arguments
+    int		addr_count,
+    int		start_bnr,	// first buffer number in a range
+    int		end_bnr,	// buffer nr or last buffer nr in a range
+    int		forceit)
+{
+    int		do_current = 0;	// delete current buffer?
+    int		deleted = 0;	// number of buffers deleted
+    char	*errormsg = NULL; // return value
+    int		bnr;		// buffer number
+    char_u	*p;
+
+    if (addr_count == 0)
+    {
+	(void)do_buffer(command, DOBUF_CURRENT, FORWARD, 0, forceit);
+    }
+    else
+    {
+	if (addr_count == 2)
+	{
+	    if (*arg)		// both range and argument is not allowed
+		return ex_errmsg(e_trailing_arg, arg);
+	    bnr = start_bnr;
+	}
+	else	// addr_count == 1
+	    bnr = end_bnr;
+
+	for ( ;!got_int; ui_breakcheck())
+	{
+	    /*
+	     * Delete the current buffer last, otherwise when the
+	     * current buffer is deleted, the next buffer becomes
+	     * the current one and will be loaded, which may then
+	     * also be deleted, etc.
+	     */
+	    if (bnr == curbuf->b_fnum)
+		do_current = bnr;
+	    else if (do_buffer_ext(command, DOBUF_FIRST, FORWARD, (int)bnr,
+			  DOBUF_NOPOPUP | (forceit ? DOBUF_FORCEIT : 0)) == OK)
+		++deleted;
+
+	    /*
+	     * find next buffer number to delete/unload
+	     */
+	    if (addr_count == 2)
+	    {
+		if (++bnr > end_bnr)
+		    break;
+	    }
+	    else    // addr_count == 1
+	    {
+		arg = skipwhite(arg);
+		if (*arg == NUL)
+		    break;
+		if (!VIM_ISDIGIT(*arg))
+		{
+		    p = skiptowhite_esc(arg);
+		    bnr = buflist_findpat(arg, p,
+			  command == DOBUF_WIPE || command == DOBUF_WIPE_REUSE,
+								FALSE, FALSE);
+		    if (bnr < 0)	    // failed
+			break;
+		    arg = p;
+		}
+		else
+		    bnr = getdigits(&arg);
+	    }
+	}
+	if (!got_int && do_current && do_buffer(command, DOBUF_FIRST,
+					  FORWARD, do_current, forceit) == OK)
+	    ++deleted;
+
+	if (deleted == 0)
+	{
+	    if (command == DOBUF_UNLOAD)
+		STRCPY(IObuff, _("E515: No buffers were unloaded"));
+	    else if (command == DOBUF_DEL)
+		STRCPY(IObuff, _("E516: No buffers were deleted"));
+	    else
+		STRCPY(IObuff, _("E517: No buffers were wiped out"));
+	    errormsg = (char *)IObuff;
+	}
+	else if (deleted >= p_report)
+	{
+	    if (command == DOBUF_UNLOAD)
+		smsg(NGETTEXT("%d buffer unloaded",
+			    "%d buffers unloaded", deleted), deleted);
+	    else if (command == DOBUF_DEL)
+		smsg(NGETTEXT("%d buffer deleted",
+			    "%d buffers deleted", deleted), deleted);
+	    else
+		smsg(NGETTEXT("%d buffer wiped out",
+			    "%d buffers wiped out", deleted), deleted);
+	}
+    }
+
+
+    return errormsg;
 }
 
 /*
@@ -2381,7 +2412,7 @@ buflist_getfile(
     if (buf == NULL)
     {
 	if ((options & GETF_ALT) && n == 0)
-	    emsg(_(e_noalt));
+	    emsg(_(e_no_alternate_file));
 	else
 	    semsg(_("E92: Buffer %d not found"), n);
 	return FAIL;
@@ -3490,7 +3521,7 @@ getaltfname(
     if (buflist_name_nr(0, &fname, &dummy) == FAIL)
     {
 	if (errmsg)
-	    emsg(_(e_noalt));
+	    emsg(_(e_no_alternate_file));
 	return NULL;
     }
     return fname;
@@ -4113,6 +4144,9 @@ build_stl_str_hl(
     int		group_end_userhl;
     int		group_start_userhl;
     int		groupdepth;
+#ifdef FEAT_EVAL
+    int		evaldepth;
+#endif
     int		minwid;
     int		maxwid;
     int		zeropad;
@@ -4187,6 +4221,9 @@ build_stl_str_hl(
 	byteval = (*mb_ptr2char)(p + wp->w_cursor.col);
 
     groupdepth = 0;
+#ifdef FEAT_EVAL
+    evaldepth = 0;
+#endif
     p = out;
     curitem = 0;
     prevchar_isflag = TRUE;
@@ -4447,6 +4484,15 @@ build_stl_str_hl(
 	    curitem++;
 	    continue;
 	}
+#ifdef FEAT_EVAL
+	// Denotes end of expanded %{} block
+	if (*s == '}' && evaldepth > 0)
+	{
+	    s++;
+	    evaldepth--;
+	    continue;
+	}
+#endif
 	if (vim_strchr(STL_ALL, *s) == NULL)
 	{
 	    s++;
@@ -4482,16 +4528,27 @@ build_stl_str_hl(
 	    break;
 
 	case STL_VIM_EXPR: // '{'
+	{
+#ifdef FEAT_EVAL
+	    char_u *block_start = s - 1;
+#endif
+	    int reevaluate = (*s == '%');
+
+	    if (reevaluate)
+		s++;
 	    itemisflag = TRUE;
 	    t = p;
-	    while (*s != '}' && *s != NUL && p + 1 < out + outlen)
+	    while ((*s != '}' || (reevaluate && s[-1] != '%'))
+					  && *s != NUL && p + 1 < out + outlen)
 		*p++ = *s++;
 	    if (*s != '}')	// missing '}' or out of space
 		break;
 	    s++;
-	    *p = 0;
+	    if (reevaluate)
+		p[-1] = 0; // remove the % at the end of %{% expr %}
+	    else
+		*p = 0;
 	    p = t;
-
 #ifdef FEAT_EVAL
 	    vim_snprintf((char *)buf_tmp, sizeof(buf_tmp),
 							 "%d", curbuf->b_fnum);
@@ -4525,9 +4582,42 @@ build_stl_str_hl(
 		    itemisflag = FALSE;
 		}
 	    }
+
+	    // If the output of the expression needs to be evaluated
+	    // replace the %{} block with the result of evaluation
+	    if (reevaluate && str != NULL && *str != 0
+		    && strchr((const char *)str, '%') != NULL
+		    && evaldepth < MAX_STL_EVAL_DEPTH)
+	    {
+		size_t parsed_usefmt = (size_t)(block_start - usefmt);
+		size_t str_length = strlen((const char *)str);
+		size_t fmt_length = strlen((const char *)s);
+		size_t new_fmt_len = parsed_usefmt
+						 + str_length + fmt_length + 3;
+		char_u *new_fmt = (char_u *)alloc(new_fmt_len * sizeof(char_u));
+		char_u *new_fmt_p = new_fmt;
+
+		new_fmt_p = (char_u *)memcpy(new_fmt_p, usefmt, parsed_usefmt)
+							       + parsed_usefmt;
+		new_fmt_p = (char_u *)memcpy(new_fmt_p , str, str_length)
+								  + str_length;
+		new_fmt_p = (char_u *)memcpy(new_fmt_p, "%}", 2) + 2;
+		new_fmt_p = (char_u *)memcpy(new_fmt_p , s, fmt_length)
+								  + fmt_length;
+		*new_fmt_p = 0;
+		new_fmt_p = NULL;
+
+		if (usefmt != fmt)
+		    vim_free(usefmt);
+		VIM_CLEAR(str);
+		usefmt = new_fmt;
+		s = usefmt + parsed_usefmt;
+		evaldepth++;
+		continue;
+	    }
 #endif
 	    break;
-
+	}
 	case STL_LINE:
 	    num = (wp->w_buffer->b_ml.ml_flags & ML_EMPTY)
 		  ? 0L : (long)(wp->w_cursor.lnum);

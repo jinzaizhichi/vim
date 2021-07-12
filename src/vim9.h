@@ -14,12 +14,15 @@
 typedef enum {
     ISN_EXEC,	    // execute Ex command line isn_arg.string
     ISN_EXECCONCAT, // execute Ex command from isn_arg.number items on stack
+    ISN_EXEC_SPLIT, // execute Ex command from isn_arg.string split at NL
+    ISN_LEGACY_EVAL, // evaluate expression isn_arg.string with legacy syntax.
     ISN_ECHO,	    // echo isn_arg.echo.echo_count items on top of stack
     ISN_EXECUTE,    // execute Ex commands isn_arg.number items on top of stack
     ISN_ECHOMSG,    // echo Ex commands isn_arg.number items on top of stack
     ISN_ECHOERR,    // echo Ex commands isn_arg.number items on top of stack
     ISN_RANGE,	    // compute range from isn_arg.string, push to stack
     ISN_SUBSTITUTE, // :s command with expression
+    ISN_INSTR,	    // instructions compiled from expression
 
     // get and set variables
     ISN_LOAD,	    // push local variable isn_arg.number
@@ -88,7 +91,7 @@ typedef enum {
     ISN_PCALL,	    // call partial, use isn_arg.pfunc
     ISN_PCALL_END,  // cleanup after ISN_PCALL with cpf_top set
     ISN_RETURN,	    // return, result is on top of stack
-    ISN_RETURN_ZERO, // Push zero, then return
+    ISN_RETURN_VOID, // Push void, then return
     ISN_FUNCREF,    // push a function ref to dfunc isn_arg.funcref
     ISN_NEWFUNC,    // create a global function from a lambda function
     ISN_DEF,	    // list functions
@@ -146,9 +149,9 @@ typedef enum {
     ISN_GETITEM,    // push list item, isn_arg.number is the index
     ISN_MEMBER,	    // dict[member]
     ISN_STRINGMEMBER, // dict.member using isn_arg.string
-    ISN_2BOOL,	    // falsy/truthy to bool, invert if isn_arg.number != 0
+    ISN_2BOOL,	    // falsy/truthy to bool, uses isn_arg.tobool
     ISN_COND2BOOL,  // convert value to bool
-    ISN_2STRING,    // convert value to string at isn_arg.number on stack
+    ISN_2STRING,    // convert value to string at isn_arg.tostring on stack
     ISN_2STRING_ANY, // like ISN_2STRING but check type
     ISN_NEGATENR,   // apply "-" to number
 
@@ -165,12 +168,17 @@ typedef enum {
     ISN_PROF_START, // start a line for profiling
     ISN_PROF_END,   // end a line for profiling
 
+    ISN_DEBUG,	    // check for debug breakpoint, uses isn_arg.debug
+
     ISN_UNPACK,	    // unpack list into items, uses isn_arg.unpack
     ISN_SHUFFLE,    // move item on stack up or down
     ISN_DROP,	    // pop stack and discard value
 
     ISN_REDIRSTART, // :redir =>
     ISN_REDIREND,   // :redir END, isn_arg.number == 1 for append
+
+    ISN_CEXPR_AUCMD, // first part of :cexpr  isn_arg.number is cmdidx
+    ISN_CEXPR_CORE,  // second part of :cexpr, uses isn_arg.cexpr
 
     ISN_FINISH	    // end marker in list of instructions
 } isntype_T;
@@ -199,6 +207,12 @@ typedef struct {
     char_u  *cuf_name;
     int	    cuf_argcount;   // number of arguments on top of stack
 } cufunc_T;
+
+// arguments to ISN_GETITEM
+typedef struct {
+    varnumber_T	gi_index;
+    int		gi_with_op;
+} getitem_T;
 
 typedef enum {
     JUMP_ALWAYS,
@@ -352,6 +366,36 @@ typedef struct {
     isn_T	*subs_instr;	// sequence of instructions
 } subs_T;
 
+// indirect arguments to ISN_TRY
+typedef struct {
+    int		cer_cmdidx;
+    char_u	*cer_cmdline;
+    int		cer_forceit;
+} cexprref_T;
+
+// arguments to ISN_CEXPR_CORE
+typedef struct {
+    cexprref_T *cexpr_ref;
+} cexpr_T;
+
+// arguments to ISN_2STRING and ISN_2STRING_ANY
+typedef struct {
+    int		offset;
+    int		tolerant;
+} tostring_T;
+
+// arguments to ISN_2BOOL
+typedef struct {
+    int		offset;
+    int		invert;
+} tobool_T;
+
+// arguments to ISN_DEBUG
+typedef struct {
+    varnumber_T	dbg_var_names_len;  // current number of local variables
+    int		dbg_break_lnum;	    // first line to break after
+} debug_T;
+
 /*
  * Instruction
  */
@@ -395,6 +439,12 @@ struct isn_S {
 	unpack_T	    unpack;
 	isn_outer_T	    outer;
 	subs_T		    subs;
+	cexpr_T		    cexpr;
+	isn_T		    *instr;
+	tostring_T	    tostring;
+	tobool_T	    tobool;
+	getitem_T	    getitem;
+	debug_T		    debug;
     } isn_arg;
 };
 
@@ -411,6 +461,7 @@ struct dfunc_S {
 				    // was compiled.
 
     garray_T	df_def_args_isn;    // default argument instructions
+    garray_T	df_var_names;	    // names of local vars
 
     // After compiling "df_instr" and/or "df_instr_prof" is not NULL.
     isn_T	*df_instr;	    // function body to be executed
@@ -419,6 +470,8 @@ struct dfunc_S {
     isn_T	*df_instr_prof;	     // like "df_instr" with profiling
     int		df_instr_prof_count; // size of "df_instr_prof"
 #endif
+    isn_T	*df_instr_debug;      // like "df_instr" with debugging
+    int		df_instr_debug_count; // size of "df_instr_debug"
 
     int		df_varcount;	    // number of local variables
     int		df_has_closure;	    // one if a closure was created
@@ -427,15 +480,17 @@ struct dfunc_S {
 // Number of entries used by stack frame for a function call.
 // - ec_dfunc_idx:   function index
 // - ec_iidx:        instruction index
+// - ec_instr:       instruction list pointer
 // - ec_outer:	     stack used for closures
 // - funclocal:	     function-local data
 // - ec_frame_idx:   previous frame index
 #define STACK_FRAME_FUNC_OFF 0
 #define STACK_FRAME_IIDX_OFF 1
-#define STACK_FRAME_OUTER_OFF 2
-#define STACK_FRAME_FUNCLOCAL_OFF 3
-#define STACK_FRAME_IDX_OFF 4
-#define STACK_FRAME_SIZE 5
+#define STACK_FRAME_INSTR_OFF 2
+#define STACK_FRAME_OUTER_OFF 3
+#define STACK_FRAME_FUNCLOCAL_OFF 4
+#define STACK_FRAME_IDX_OFF 5
+#define STACK_FRAME_SIZE 6
 
 
 #ifdef DEFINE_VIM9_GLOBALS
@@ -453,10 +508,17 @@ extern garray_T def_functions;
 // Used for "lnum" when a range is to be taken from the stack and "!" is used.
 #define LNUM_VARIABLE_RANGE_ABOVE -888
 
+// Keep in sync with COMPILE_TYPE()
 #ifdef FEAT_PROFILE
 # define INSTRUCTIONS(dfunc) \
-	((do_profiling == PROF_YES && (dfunc->df_ufunc)->uf_profiling) \
-	? (dfunc)->df_instr_prof : (dfunc)->df_instr)
+	(debug_break_level > 0 || dfunc->df_ufunc->uf_has_breakpoint \
+	    ? (dfunc)->df_instr_debug \
+	    : ((do_profiling == PROF_YES && (dfunc->df_ufunc)->uf_profiling) \
+		? (dfunc)->df_instr_prof \
+		: (dfunc)->df_instr))
 #else
-# define INSTRUCTIONS(dfunc) ((dfunc)->df_instr)
+# define INSTRUCTIONS(dfunc) \
+	(debug_break_level > 0 || dfunc->df_ufunc->uf_has_breakpoint \
+		? (dfunc)->df_instr_debug \
+		: (dfunc)->df_instr)
 #endif
